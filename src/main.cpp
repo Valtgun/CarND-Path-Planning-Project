@@ -1,3 +1,8 @@
+// DONE: Keep initial lane
+// TODO: Keep lane and adjust speed to front vehicle
+// TODO: Change lane when vehicle in front
+
+
 #include <fstream>
 #include <math.h>
 #include <uWS/uWS.h>
@@ -8,6 +13,7 @@
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
+#include "spline.h"
 
 using namespace std;
 
@@ -196,7 +202,20 @@ int main() {
   	map_waypoints_dy.push_back(d_y);
   }
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  tk::spline waypoints_x;
+  waypoints_x.set_points(map_waypoints_s, map_waypoints_x);
+
+  tk::spline waypoints_y;
+  waypoints_y.set_points(map_waypoints_s, map_waypoints_y);
+
+  tk::spline waypoints_dx;
+  waypoints_dx.set_points(map_waypoints_s, map_waypoints_dx);
+
+  tk::spline waypoints_dy;
+  waypoints_dy.set_points(map_waypoints_s, map_waypoints_dy);
+
+
+  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy, &waypoints_x, &waypoints_y, &waypoints_dx, &waypoints_dy , &max_s](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -209,12 +228,12 @@ int main() {
 
       if (s != "") {
         auto j = json::parse(s);
-        
+
         string event = j[0].get<string>();
-        
+
         if (event == "telemetry") {
           // j[1] is the data JSON object
-          
+
         	// Main car's localization Data
           	double car_x = j[1]["x"];
           	double car_y = j[1]["y"];
@@ -226,7 +245,7 @@ int main() {
           	// Previous path data given to the Planner
           	auto previous_path_x = j[1]["previous_path_x"];
           	auto previous_path_y = j[1]["previous_path_y"];
-          	// Previous path's end s and d values 
+          	// Previous path's end s and d values
           	double end_path_s = j[1]["end_path_s"];
           	double end_path_d = j[1]["end_path_d"];
 
@@ -238,6 +257,65 @@ int main() {
           	vector<double> next_x_vals;
           	vector<double> next_y_vals;
 
+            double pos_x;
+            double pos_y;
+            double pos_s;
+            double angle;
+            int path_size = previous_path_x.size();
+
+            // Copy old path
+            for(int i = 0; i < path_size; i++)
+            {
+              next_x_vals.push_back(previous_path_x[i]);
+              next_y_vals.push_back(previous_path_y[i]);
+            }
+
+            // Initialize path to current position if no path
+            if(path_size == 0)
+            {
+              pos_x = car_x;
+              pos_y = car_y;
+              angle = deg2rad(car_yaw);
+              pos_s = car_s;
+            }
+            else // Calculate angle and get position from previous data
+            {
+              pos_x = previous_path_x[path_size-1];
+              pos_y = previous_path_y[path_size-1];
+
+              double pos_x2 = previous_path_x[path_size-2];
+              double pos_y2 = previous_path_y[path_size-2];
+              angle = atan2(pos_y-pos_y2,pos_x-pos_x2);
+            }
+
+            // Setup path waypoints
+            double dist_inc = 0.43;
+            double path_point_x;
+            double path_point_y;
+            double path_point_dx;
+            double path_point_dy;
+            for(int i = 0; i < 50-path_size; i++)
+            {
+
+              //next_x_vals.push_back(pos_x+(dist_inc)*cos(angle+(i+1)*(pi()/100)));
+              //next_y_vals.push_back(pos_y+(dist_inc)*sin(angle+(i+1)*(pi()/100)));
+              //pos_x += (dist_inc)*cos(angle+(i+1)*(pi()/100));
+              //pos_y += (dist_inc)*sin(angle+(i+1)*(pi()/100));
+              pos_s += dist_inc;
+              pos_s = fmod(pos_s, max_s);
+
+              path_point_x = waypoints_x(pos_s);
+              path_point_y = waypoints_y(pos_s);
+              path_point_dx = waypoints_dx(pos_s);
+              path_point_dy =  waypoints_dy(pos_s);
+              //double lane_d = pp.d;
+
+              pos_x = path_point_x + path_point_dx * (2+1*4);
+              pos_y = path_point_y + path_point_dy * (2+1*4);
+
+              next_x_vals.push_back(pos_x);
+              next_y_vals.push_back(pos_y);
+            }
 
           	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
           	msgJson["next_x"] = next_x_vals;
@@ -247,7 +325,7 @@ int main() {
 
           	//this_thread::sleep_for(chrono::milliseconds(1000));
           	ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
-          
+
         }
       } else {
         // Manual driving
@@ -290,83 +368,3 @@ int main() {
   }
   h.run();
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
