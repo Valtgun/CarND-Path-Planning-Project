@@ -1,6 +1,6 @@
 // DONE: Keep initial lane
-// TODO: Keep lane and adjust speed to front vehicle
-// TODO: Change lane when vehicle in front
+// DONE: Keep lane and adjust speed to front vehicle
+// TODO: Change lane when vehicle in front, if the distance at full speed is limited
 
 
 #include <fstream>
@@ -252,6 +252,50 @@ int main() {
           	// Sensor Fusion Data, a list of all other cars on the same side of the road.
           	auto sensor_fusion = j[1]["sensor_fusion"];
 
+            // get cars in front
+            int num_cars = sensor_fusion.size();
+            vector<double> cars_in_lane;
+            double min_dist = 99999;
+            double min_sens_i;
+            for (int i = 0; i < num_cars; ++i)
+            {
+              auto sens = sensor_fusion[i];
+              double sens_id = sens[0];
+              double sens_x = sens[1];
+              double sens_y = sens[2];
+              double sens_vel_x = sens[3];
+              double sens_vel_y = sens[4];
+              double sens_s = sens[5];
+              double sens_d = sens[6];
+              double sens_vel = sqrt(sens_vel_x*sens_vel_x + sens_vel_y*sens_vel_y);
+              double sens_dist = distance(car_x,car_y,sens_x,sens_y);
+
+              if ((sens_d > 4.0) and (sens_d<8.0)) // middle lane
+              {
+                if (sens_s > car_s) // car in front
+                {
+                  if (sens_dist < min_dist) // find closest car in front
+                  {
+                    min_sens_i = i;
+                    min_dist = sens_dist;
+                    //cout << "Closest car is: " << min_sens_i << endl;
+                    //cout << "D pos: " << sens_d << endl;
+                    //cout << "S pos: " << sens_s << endl;
+                  }
+                }
+              }
+            }
+
+            auto sens = sensor_fusion[min_sens_i];
+            double sens_x = sens[1];
+            double sens_y = sens[2];
+            double sens_vel_x = sens[3];
+            double sens_vel_y = sens[4];
+            double sens_s = sens[5];
+            double sens_d = sens[6];
+            double in_front_vel = sqrt(sens_vel_x*sens_vel_x + sens_vel_y*sens_vel_y);
+            double in_front_dist = distance(car_x,car_y,sens_x,sens_y);
+
           	json msgJson;
 
           	vector<double> next_x_vals;
@@ -290,6 +334,13 @@ int main() {
 
             // Setup path waypoints
             double dist_inc = 0.43;
+            double pred_speed_to_car = in_front_dist/(50*dist_inc)+(in_front_vel/100-car_speed/100);
+            cout << "Dist: " << in_front_dist << endl;
+            cout << "CarV: " << car_speed << endl;
+            cout << "FrtV: " << in_front_vel << endl;
+            cout << pred_speed_to_car << endl;
+            dist_inc = min(1.0, pred_speed_to_car)*dist_inc;
+
             double path_point_x;
             double path_point_y;
             double path_point_dx;
