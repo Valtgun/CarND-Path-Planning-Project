@@ -168,6 +168,12 @@ vector<double> getXY(double s, double d, vector<double> maps_s, vector<double> m
 int main() {
   uWS::Hub h;
 
+  int car_state = 1;
+  // 1 - drive_in_lane - drives at maximum speed or distance up to closest car in front
+  // 2 - lane_change_needed - max speed obstructed in front, need to change lanes
+  // 3 - changing_lane - change lane path clear, doing the change
+
+
   // Load up map values for waypoint's x,y,s and d normalized normal vectors
   vector<double> map_waypoints_x;
   vector<double> map_waypoints_y;
@@ -179,6 +185,9 @@ int main() {
   string map_file_ = "../data/highway_map.csv";
   // The max s value before wrapping around the track back to 0
   double max_s = 6945.554;
+  double dist_inc = 0.43; // max speed
+  double targ_dist_inc;
+  double targ_d;
 
   ifstream in_map_(map_file_.c_str(), ifstream::in);
 
@@ -229,7 +238,7 @@ int main() {
   waypoints_dy.set_points(map_waypoints_s, map_waypoints_dy);
 
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy, &waypoints_x, &waypoints_y, &waypoints_dx, &waypoints_dy , &max_s](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy, &waypoints_x, &waypoints_y, &waypoints_dx, &waypoints_dy , &max_s, &car_state, &targ_dist_inc, &targ_d, &dist_inc](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -268,27 +277,29 @@ int main() {
 
             // get cars in front
             int num_cars = sensor_fusion.size();
-            vector<double> cars_in_lane;
+            //vector<double> cars_in_lane;
             double min_dist = 99999;
             double min_sens_i;
             //vector<double> cars_in_left_lane;
             //vector<double> cars_in_center_lane;
             //vector<double> cars_in_right_lane;
 
-            //double min_dist_front_left = 99999;
-            //double min_dist_front_center = 99999;
-            //double min_dist_front_right = 99999;
-            //double min_dist_back_left = 99999;
-            //double min_dist_back_center = 99999;
-            //double min_dist_back_right = 99999;
+            double min_dist_front_left = 99999;
+            double min_dist_front_center = 99999;
+            double min_dist_front_right = 99999;
+            double min_dist_back_left = 99999;
+            double min_dist_back_center = 99999;
+            double min_dist_back_right = 99999;
 
-            //double min_sens_i_front_left;
-            //double min_sens_i_front_center;
-            //double min_sens_i_front_right;
-            //double min_sens_i_back_left;
-            //double min_sens_i_back_center;
-            //double min_sens_i_back_right;
+            double min_sens_i_front_left;
+            double min_sens_i_front_center;
+            double min_sens_i_front_right;
+            double min_sens_i_back_left;
+            double min_sens_i_back_center;
+            double min_sens_i_back_right;
 
+
+            // finding closest cars in all 3 lanes, one in fron and one in back
             for (int i = 0; i < num_cars; ++i)
             {
               auto sens = sensor_fusion[i];
@@ -304,29 +315,218 @@ int main() {
 
               if ((sens_d > 4.0) and (sens_d<8.0)) // middle lane
               {
-                if (sens_s > car_s) // car in front
+                if (sens_s > car_s) // car in front (center)
                 {
-                  if (sens_dist < min_dist) // find closest car in front
+                  if (sens_dist < min_dist_front_center) // find closest car in front
                   {
-                    min_sens_i = i;
-                    min_dist = sens_dist;
-                    //cout << "Closest car is: " << min_sens_i << endl;
-                    //cout << "D pos: " << sens_d << endl;
-                    //cout << "S pos: " << sens_s << endl;
+                    min_sens_i_front_center = i;
+                    min_dist_front_center = sens_dist;
+                  }
+                }
+                else // car behind (center)
+                {
+                  if (sens_dist < min_dist_back_center) // find closest car in front
+                  {
+                    min_sens_i_back_center = i;
+                    min_dist_back_center = sens_dist;
+                  }
+                }
+              }
+              else
+              {
+                if (sens_d <= 4.0) // car in left lane
+                {
+                  if (sens_s > car_s) // car in front (left)
+                  {
+                    if (sens_dist < min_dist_front_left) // find closest car in front
+                    {
+                      min_sens_i_front_left = i;
+                      min_dist_front_left = sens_dist;
+                    }
+                  }
+                  else // car behind (left)
+                  {
+                    if (sens_dist < min_dist_back_left) // find closest car in front
+                    {
+                      min_sens_i_back_left = i;
+                      min_dist_back_left = sens_dist;
+                    }
+                  }
+                }
+                else // right lane
+                {
+                  if (sens_s > car_s) // car in front (right)
+                  {
+                    if (sens_dist < min_dist_front_right) // find closest car in front
+                    {
+                      min_sens_i_front_right = i;
+                      min_dist_front_right = sens_dist;
+                    }
+                  }
+                  else // car behind (right)
+                  {
+                    if (sens_dist < min_dist_back_right) // find closest car in front
+                    {
+                      min_sens_i_back_right = i;
+                      min_dist_back_right = sens_dist;
+                    }
                   }
                 }
               }
             }
 
-            auto sens = sensor_fusion[min_sens_i];
-            double sens_x = sens[1];
-            double sens_y = sens[2];
-            double sens_vel_x = sens[3];
-            double sens_vel_y = sens[4];
-            double sens_s = sens[5];
-            double sens_d = sens[6];
-            double in_front_vel = sqrt(sens_vel_x*sens_vel_x + sens_vel_y*sens_vel_y);
-            double in_front_dist = distance(car_x,car_y,sens_x,sens_y);
+            // state model
+            // 1 - drive_in_lane - drives at maximum speed or distance up to closest car in front
+            // 2 - lane_change_needed - max speed obstructed in front, need to change lanes
+            // 3 - changing_lane - change lane path clear, doing the change
+
+            //auto sens = sensor_fusion[min_sens_i];
+            double sens_x;// = sens[1];
+            double sens_y;// = sens[2];
+            double sens_vel_x;// = sens[3];
+            double sens_vel_y;// = sens[4];
+            //double sens_s = sens[5];
+            //double sens_d = sens[6];
+            double in_front_vel;// = sqrt(sens_vel_x*sens_vel_x + sens_vel_y*sens_vel_y);
+            double in_front_dist;// = distance(car_x,car_y,sens_x,sens_y);
+
+            // calculating distance and velocity to car in front
+            if (car_d <= 4)
+            {
+              sens_x = sensor_fusion[min_sens_i_front_left][1];
+              sens_y = sensor_fusion[min_sens_i_front_left][2];
+              sens_vel_x = sensor_fusion[min_sens_i_front_left][3];
+              sens_vel_y = sensor_fusion[min_sens_i_front_left][4];
+              if (car_state == 1 or car_state == 2)
+              {
+                targ_d = 2+0*4.0; // if car should be satying in lane, then set target to lane middle
+              }
+            }
+            else
+            {
+              if (car_d >= 8)
+              {
+                sens_x = sensor_fusion[min_sens_i_front_right][1];
+                sens_y = sensor_fusion[min_sens_i_front_right][2];
+                sens_vel_x = sensor_fusion[min_sens_i_front_right][3];
+                sens_vel_y = sensor_fusion[min_sens_i_front_right][4];
+                if (car_state == 1 or car_state == 2)
+                {
+                  targ_d = 2+2*4.0;
+                }
+              }
+              else
+              {
+                sens_x = sensor_fusion[min_sens_i_front_center][1];
+                sens_y = sensor_fusion[min_sens_i_front_center][2];
+                sens_vel_x = sensor_fusion[min_sens_i_front_center][3];
+                sens_vel_y = sensor_fusion[min_sens_i_front_center][4];
+                if (car_state == 1 or car_state == 2)
+                {
+                  targ_d = 2+1*4.0;
+                }
+              }
+            }
+            in_front_vel = sqrt(sens_vel_x*sens_vel_x + sens_vel_y*sens_vel_y);
+            in_front_dist = distance(car_x,car_y,sens_x,sens_y);
+
+            if (car_state == 2) // need lane change
+            {
+              double pred_speed_to_car = in_front_dist/(50*dist_inc)+(in_front_vel/100-car_speed/100);
+              targ_dist_inc = min(1.0, pred_speed_to_car)*dist_inc;
+              bool can_change = false;
+              // TODO: Make decision when and where to change lanes
+
+              double sens_x_l = sensor_fusion[min_sens_i_front_left][1];
+              double sens_y_l = sensor_fusion[min_sens_i_front_left][2];
+              double sens_vel_x_l = sensor_fusion[min_sens_i_front_left][3];
+              double sens_vel_y_l = sensor_fusion[min_sens_i_front_left][4];
+              double in_front_vel_l = sqrt(sens_vel_x_l*sens_vel_x_l + sens_vel_y_l*sens_vel_y_l);
+              double in_front_dist_l = distance(car_x,car_y,sens_x_l,sens_y_l);
+              double pred_speed_to_car_l = in_front_dist_l/(50*dist_inc)+(in_front_vel_l/100-car_speed/100);
+
+              double sens_x_c = sensor_fusion[min_sens_i_front_center][1];
+              double sens_y_c = sensor_fusion[min_sens_i_front_center][2];
+              double sens_vel_y_c = sensor_fusion[min_sens_i_front_center][4];
+              double sens_vel_x_c = sensor_fusion[min_sens_i_front_center][3];
+              double in_front_vel_c = sqrt(sens_vel_x_c*sens_vel_x_c + sens_vel_y_c*sens_vel_y_c);
+              double in_front_dist_c = distance(car_x,car_y,sens_x_c,sens_y_c);
+              double pred_speed_to_car_c = in_front_dist_c/(50*dist_inc)+(in_front_vel_c/100-car_speed/100);
+
+              double sens_x_r = sensor_fusion[min_sens_i_front_right][1];
+              double sens_y_r = sensor_fusion[min_sens_i_front_right][2];
+              double sens_vel_x_r = sensor_fusion[min_sens_i_front_right][3];
+              double sens_vel_y_r = sensor_fusion[min_sens_i_front_right][4];
+              double in_front_vel_r = sqrt(sens_vel_x_r*sens_vel_x_r + sens_vel_y_r*sens_vel_y_r);
+              double in_front_dist_r = distance(car_x,car_y,sens_x_r,sens_y_r);
+              double pred_speed_to_car_r = in_front_dist_r/(50*dist_inc)+(in_front_vel_r/100-car_speed/100);
+
+              if (targ_d < 4.0) // in left lane
+              {
+                if (pred_speed_to_car_c > pred_speed_to_car_l)
+                {
+                  targ_d = 2+1*4.0;
+                  can_change = true;
+                }
+              }
+              else
+              {
+                if (targ_d > 8.0)
+                {
+                  if (pred_speed_to_car_c > pred_speed_to_car_r)
+                  {
+                    targ_d = 2+1*4.0;
+                    can_change = true;
+                  }
+                }
+                else
+                {
+                  if (pred_speed_to_car_l > pred_speed_to_car_r)
+                  {
+                    if (pred_speed_to_car_l > pred_speed_to_car_c)
+                    {
+                      targ_d = 2+0*4.0;
+                      can_change = true;
+                    }
+                  }
+                  else
+                  {
+                    if (pred_speed_to_car_r > pred_speed_to_car_c)
+                    {
+                      targ_d = 2+2*4.0;
+                      can_change = true;
+                    }
+                  }
+                }
+              }
+
+              if (can_change)
+              {
+                car_state = 3;
+              }
+            }
+            else
+            {
+              if (car_state == 3) // changing lane
+              {
+                double pred_speed_to_car = in_front_dist/(50*dist_inc)+(in_front_vel/100-car_speed/100);
+                targ_dist_inc = min(1.0, pred_speed_to_car)*dist_inc;
+                // When lane change finished, change the vehicle state
+                if (abs(car_d - targ_d)<0.1)
+                {
+                  car_state = 1;
+                }
+              }
+              else // default state, driving at max or follow speed
+              {
+                double pred_speed_to_car = in_front_dist/(50*dist_inc)+(in_front_vel/100-car_speed/100);
+                targ_dist_inc = min(1.0, pred_speed_to_car)*dist_inc;
+                if (pred_speed_to_car < 1.0) // need lane change
+                {
+                  car_state = 2;
+                }
+              }
+            }
 
           	json msgJson;
 
@@ -336,6 +536,7 @@ int main() {
             double pos_x;
             double pos_y;
             double pos_s;
+            double pos_d;
             double angle;
             int path_size = previous_path_x.size();
 
@@ -353,6 +554,7 @@ int main() {
               pos_y = car_y;
               angle = deg2rad(car_yaw);
               pos_s = car_s;
+              pos_d = car_d;
             }
             else // Calculate angle and get position from previous data
             {
@@ -363,29 +565,33 @@ int main() {
               double pos_y2 = previous_path_y[path_size-2];
               angle = atan2(pos_y-pos_y2,pos_x-pos_x2);
             }
+            // we have targ_d and targ_dist_inc to the target in optimistic case
+            // TODO: setting path to not exceed parameters
+
+
+            cout << "car state: " << car_state;
+            cout << "\t tar s: " << targ_dist_inc;
+            cout << "\t tar d: " << targ_d;
+            cout << "\t car d: " << car_d << endl;
+            double d_smoothing_steps = 50; // TODO: Calculate parameter based
+            double delta = (targ_d - car_d) / d_smoothing_steps;
 
             // Setup path waypoints
-            double dist_inc = 0.43;
-            double pred_speed_to_car = in_front_dist/(50*dist_inc)+(in_front_vel/100-car_speed/100);
-            cout << "Dist: " << in_front_dist << endl;
-            cout << "CarV: " << car_speed << endl;
-            cout << "FrtV: " << in_front_vel << endl;
-            cout << pred_speed_to_car << endl;
-            dist_inc = min(1.0, pred_speed_to_car)*dist_inc;
-
             double path_point_x;
             double path_point_y;
             double path_point_dx;
             double path_point_dy;
             for(int i = 0; i < 50-path_size; i++)
             {
-
               //next_x_vals.push_back(pos_x+(dist_inc)*cos(angle+(i+1)*(pi()/100)));
               //next_y_vals.push_back(pos_y+(dist_inc)*sin(angle+(i+1)*(pi()/100)));
               //pos_x += (dist_inc)*cos(angle+(i+1)*(pi()/100));
               //pos_y += (dist_inc)*sin(angle+(i+1)*(pi()/100));
-              pos_s += dist_inc;
+              //pos_s += dist_inc;
+              pos_s += targ_dist_inc;
               pos_s = fmod(pos_s, max_s);
+
+              pos_d += delta;
 
               path_point_x = waypoints_x(pos_s);
               path_point_y = waypoints_y(pos_s);
@@ -393,8 +599,8 @@ int main() {
               path_point_dy =  waypoints_dy(pos_s);
               //double lane_d = pp.d;
 
-              pos_x = path_point_x + path_point_dx * (2+1*4);
-              pos_y = path_point_y + path_point_dy * (2+1*4);
+              pos_x = path_point_x + path_point_dx * pos_d;
+              pos_y = path_point_y + path_point_dy * pos_d;
 
               next_x_vals.push_back(pos_x);
               next_y_vals.push_back(pos_y);
