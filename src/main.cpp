@@ -202,6 +202,20 @@ int main() {
   	map_waypoints_dy.push_back(d_y);
   }
 
+  // correct spline calculation at the end of track
+  map_waypoints_x.push_back(map_waypoints_x[0]);
+  map_waypoints_y.push_back(map_waypoints_y[0]);
+  map_waypoints_s.push_back(max_s+map_waypoints_s[0]);
+  map_waypoints_dx.push_back(map_waypoints_dx[0]);
+  map_waypoints_dy.push_back(map_waypoints_dy[0]);
+
+  map_waypoints_x.push_back(map_waypoints_x[1]);
+  map_waypoints_y.push_back(map_waypoints_y[1]);
+  map_waypoints_s.push_back(max_s+map_waypoints_s[1]);
+  map_waypoints_dx.push_back(map_waypoints_dx[1]);
+  map_waypoints_dy.push_back(map_waypoints_dy[1]);
+
+
   tk::spline waypoints_x;
   waypoints_x.set_points(map_waypoints_s, map_waypoints_x);
 
@@ -257,6 +271,24 @@ int main() {
             vector<double> cars_in_lane;
             double min_dist = 99999;
             double min_sens_i;
+            //vector<double> cars_in_left_lane;
+            //vector<double> cars_in_center_lane;
+            //vector<double> cars_in_right_lane;
+
+            //double min_dist_front_left = 99999;
+            //double min_dist_front_center = 99999;
+            //double min_dist_front_right = 99999;
+            //double min_dist_back_left = 99999;
+            //double min_dist_back_center = 99999;
+            //double min_dist_back_right = 99999;
+
+            //double min_sens_i_front_left;
+            //double min_sens_i_front_center;
+            //double min_sens_i_front_right;
+            //double min_sens_i_back_left;
+            //double min_sens_i_back_center;
+            //double min_sens_i_back_right;
+
             for (int i = 0; i < num_cars; ++i)
             {
               auto sens = sensor_fusion[i];
