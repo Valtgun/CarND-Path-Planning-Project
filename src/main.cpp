@@ -1,8 +1,3 @@
-// DONE: Keep initial lane
-// DONE: Keep lane and adjust speed to front vehicle
-// TODO: Change lane when vehicle in front, if the distance at full speed is limited
-
-
 #include <fstream>
 #include <math.h>
 #include <uWS/uWS.h>
@@ -165,12 +160,6 @@ vector<double> getXY(double s, double d, vector<double> maps_s, vector<double> m
 
 }
 
-double mph2inc(double mph){
-	double inc = mph * 0.02 * (1600.0/3600.0);
-	return inc;
-}
-
-
 int main() {
   uWS::Hub h;
 
@@ -194,6 +183,10 @@ int main() {
   double dist_inc = 0.42; // max speed
   double targ_dist_inc;
   double targ_d;
+  double pos_d;
+  double pos_s;
+  double prev_d;
+  double prev_s;
 
   ifstream in_map_(map_file_.c_str(), ifstream::in);
 
@@ -243,15 +236,17 @@ int main() {
   tk::spline waypoints_dy;
   waypoints_dy.set_points(map_waypoints_s, map_waypoints_dy);
 
-  double last_speed;
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy, &waypoints_x, &waypoints_y, &waypoints_dx, &waypoints_dy , &max_s, &car_state, &targ_dist_inc, &targ_d, &dist_inc, &last_speed](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+
+  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy, &waypoints_x, &waypoints_y, &waypoints_dx, &waypoints_dy , &max_s, &car_state, &targ_dist_inc, &targ_d, &dist_inc, &pos_d, &pos_s, &prev_s, &prev_d](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
     //auto sdata = string(data).substr(0, length);
     //cout << sdata << endl;
+    double max_s_change = 0.001;
+    double max_d_change = 0.001;
 
     if (length && length > 2 && data[0] == '4' && data[1] == '2') {
 
@@ -272,8 +267,6 @@ int main() {
           	double car_d = j[1]["d"];
           	double car_yaw = j[1]["yaw"];
           	double car_speed = j[1]["speed"];
-            last_speed = car_speed;
-            double last_speed_inc = mph2inc(last_speed);
 
           	// Previous path data given to the Planner
           	auto previous_path_x = j[1]["previous_path_x"];
@@ -545,9 +538,10 @@ int main() {
 
             double pos_x;
             double pos_y;
-            double pos_s;
-            double pos_d;
+            //double pos_s;
+            //double pos_d;
             double angle;
+            double speed;
 
             int path_size = previous_path_x.size();
 
@@ -567,6 +561,10 @@ int main() {
               pos_s = car_s;
               pos_d = car_d;
               end_path_d = car_d;
+              speed = 0.0;
+              prev_s = car_s;
+              prev_d = car_d;
+              //cout << "Speed 0 " << endl;
             }
             else // Calculate angle and get position from previous data
             {
@@ -575,26 +573,24 @@ int main() {
 
               double pos_x2 = previous_path_x[path_size-2];
               double pos_y2 = previous_path_y[path_size-2];
-              double sp_x = pos_x-pos_x2;
-              double sp_y = pos_y-pos_y2;
               angle = atan2(pos_y-pos_y2,pos_x-pos_x2);
-              last_speed_inc = sqrt(sp_x*sp_x+sp_y*sp_y);
-              //cout << "Size" << path_size;
-              //cout << " Pos X: " << pos_x;
-              //cout << " Pos X2: " << pos_x2;
-              //cout << " Pos SX: " << sp_x;
-              //cout << " Pos SY: " << sp_y;
-              //cout << " Speed : " << last_speed << endl;
+
+              double delta_x = pos_x2-pos_x;
+              double delta_y = pos_y2-pos_y;
+              speed = sqrt(delta_x*delta_x+delta_y*delta_y);
+
+              //pos_s = end_path_s;
+              //pos_d = end_path_d;
+              //cout << "Speed2: " << speed << endl;
             }
             // we have targ_d and targ_dist_inc to the target in optimistic case
             // TODO: setting path to not exceed parameters
-
 
             //cout << "car state: " << car_state;
             //cout << "\t tar s: " << targ_dist_inc;
             //cout << "\t tar d: " << targ_d;
             //cout << "\t car d: " << car_d << endl;
-            double d_smoothing_steps = 100; // TODO: Calculate parameter based
+            double d_smoothing_steps = 50; // TODO: Calculate parameter based
             double delta = (targ_d - end_path_d) / d_smoothing_steps;
 
             // Setup path waypoints
@@ -616,10 +612,9 @@ int main() {
             //cout << "\t end d: " << end_path_d;
             //cout << "\t car d: " << car_d << endl;
 
-
-            //cout << "Loop" << endl;
-            //cout << "Last speed: " << last_speed_inc;
-            //cout << "\t targ_dist_inc: " << targ_dist_inc << endl;
+            cout << "Before 50 loop: Pos_s " << pos_s;
+            cout << "\t Pos_d " << pos_d;
+            cout << "\t Delta " << delta << endl;
 
             for(int i = 0; i < 50-path_size; i++)
             {
@@ -628,33 +623,27 @@ int main() {
               //pos_x += (dist_inc)*cos(angle+(i+1)*(pi()/100));
               //pos_y += (dist_inc)*sin(angle+(i+1)*(pi()/100));
               //pos_s += dist_inc;
-
-
-              double limit_delta_speed;
-              if (last_speed_inc < targ_dist_inc) // accel
-              {
-                if (last_speed_inc<0.01) last_speed_inc=0.01;
-                limit_delta_speed = min (targ_dist_inc, last_speed_inc*1.1);
-                cout << "Accel: ";
-                cout << "Last speed: " << last_speed_inc;
-                cout << "\tLimit speed: " << limit_delta_speed;
-                cout << "\t targ_dist_inc: " << targ_dist_inc << endl;
-                last_speed_inc = limit_delta_speed;
-              }
-              else // breaking
-              {
-                limit_delta_speed = max (targ_dist_inc, last_speed_inc*0.9);
-                cout << "Break: ";
-                cout << "Last speed: " << last_speed_inc;
-                cout << "\tLimit speed: " << limit_delta_speed;
-                cout << "\t targ_dist_inc: " << targ_dist_inc << endl;
-                last_speed_inc = limit_delta_speed;
-              }
-
-              pos_s += limit_delta_speed;
+              cout << "I: " << i;
+              double delta_prev_s = pos_s - prev_s;
+              double delta_prev_d = pos_d - prev_d;
+              prev_s = pos_s;
+              prev_d = pos_d;
+              cout << "\t DS: " << delta_prev_s;
+              cout << "\t DP: " << delta_prev_d;
+              pos_s += min(targ_dist_inc, (delta_prev_s*(1+0.005)+0.001));
               pos_s = fmod(pos_s, max_s);
 
-              pos_d += delta;
+              if (delta>0.0)
+              {
+                pos_d += min(delta, 0.05);
+              }
+              else
+              {
+                pos_d += max(delta, -0.05);
+              }
+
+              cout << "\t Pos S: " << pos_s;
+              cout << "\t Pos D: " << pos_d << endl;
 
               path_point_x = waypoints_x(pos_s);
               path_point_y = waypoints_y(pos_s);
