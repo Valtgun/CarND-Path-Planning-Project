@@ -1,3 +1,6 @@
+// TODO: Rethink lane change decision, to take into account:
+// What happens with planning and speed during line change
+
 #include <fstream>
 #include <math.h>
 #include <uWS/uWS.h>
@@ -464,26 +467,69 @@ int main() {
               double in_front_dist_r = distance(car_x,car_y,sens_x_r,sens_y_r);
               double pred_speed_to_car_r = in_front_dist_r/(50*dist_inc)+(in_front_vel_r/100-car_speed/100);
 
+              double sens_x_lr = sensor_fusion[min_sens_i_back_left][1];
+              double sens_y_lr = sensor_fusion[min_sens_i_back_left][2];
+              double in_back_dist_l = distance(car_x,car_y,sens_x_lr,sens_y_lr);
+
+              double sens_x_cr = sensor_fusion[min_sens_i_back_center][1];
+              double sens_y_cr = sensor_fusion[min_sens_i_back_center][2];
+              double in_back_dist_c = distance(car_x,car_y,sens_x_cr,sens_y_cr);
+
+              double sens_x_rr = sensor_fusion[min_sens_i_back_right][1];
+              double sens_y_rr = sensor_fusion[min_sens_i_back_right][2];
+              double in_back_dist_r = distance(car_x,car_y,sens_x_rr,sens_y_rr);
+
               if (targ_d < 4.0) // in left lane
               {
-                if (pred_speed_to_car_c > pred_speed_to_car_l)
+                //if (pred_speed_to_car_c > pred_speed_to_car_l)
+                if (((in_front_vel_c > in_front_vel_l) and (in_front_dist_c > 20)) or (in_front_dist_c > 40))
                 {
-                  targ_d = 2+1*4.0;
-                  can_change = true;
+                  if (in_back_dist_c > 10)
+                  {
+                    targ_d = 2+1*4.0;
+                    can_change = true;
+                  }
                 }
               }
               else
               {
                 if (targ_d > 8.0)
                 {
-                  if (pred_speed_to_car_c > pred_speed_to_car_r)
+                  //if (pred_speed_to_car_c > pred_speed_to_car_r)
+                  if (((in_front_vel_c > in_front_vel_r) and (in_front_dist_c > 20)) or (in_front_dist_c > 40))
                   {
-                    targ_d = 2+1*4.0;
-                    can_change = true;
+                    if (in_back_dist_c > 10)
+                    {
+                      targ_d = 2+1*4.0;
+                      can_change = true;
+                    }
                   }
                 }
                 else
                 {
+                  if (in_front_vel_l > in_front_vel_r)
+                  {
+                    if (((in_front_vel_l > in_front_vel_c) and (in_front_dist_l > 20)) or (in_front_dist_l > 40))
+                    {
+                      if (in_back_dist_l > 10)
+                      {
+                        targ_d = 2+0*4.0;
+                        can_change = true;
+                      }
+                    }
+                  }
+                  else
+                  {
+                    if (((in_front_vel_r > in_front_vel_c) and (in_front_dist_r > 20)) or (in_front_dist_r > 40))
+                    {
+                      if (in_back_dist_r > 10)
+                      {
+                        targ_d = 2+2*4.0;
+                        can_change = true;
+                      }
+                    }
+                  }
+                  /*
                   if (pred_speed_to_car_l > pred_speed_to_car_r)
                   {
                     if (pred_speed_to_car_l > pred_speed_to_car_c)
@@ -500,6 +546,7 @@ int main() {
                       can_change = true;
                     }
                   }
+                  */
                 }
               }
 
