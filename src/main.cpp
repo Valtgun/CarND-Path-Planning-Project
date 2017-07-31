@@ -10,10 +10,13 @@
 #include <vector>
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
+#include "Eigen-3.3/Eigen/Dense"
 #include "json.hpp"
 #include "spline.h"
 
 using namespace std;
+using Eigen::MatrixXd;
+using Eigen::VectorXd;
 
 // for convenience
 using json = nlohmann::json;
@@ -162,6 +165,36 @@ vector<double> getXY(double s, double d, vector<double> maps_s, vector<double> m
 	return {x,y};
 
 }
+
+vector<double> JMT(vector< double> start, vector <double> end, double T)
+{
+    double T2 = T*T;
+    double T3 = T2*T;
+    double T4 = T3*T;
+    double T5 = T4*T;
+
+    MatrixXd b(3,3);
+    b(0,0) = T3;
+    b(0,1) = T4;
+    b(0,2) = T5;
+    b(1,0) = 3*T2;
+    b(1,1) = 4*T3;
+    b(1,2) = 5*T4;
+    b(2,0) = 6*T;
+    b(2,1) = 12*T2;
+    b(2,2) = 20*T3;
+
+    VectorXd c(3);
+    c(0) = end[0]-start[0]-start[1]*T-start[2]*T2/2;
+    c(1) = end[1]-start[1]-start[2]*T;
+    c(2) = end[2]-start[2];
+
+    VectorXd a(3);
+    a = b.inverse() * c;
+
+    return {start[0], start[1], start[2]/2,a[0],a[1],a[2]};
+}
+
 
 int main() {
   uWS::Hub h;
@@ -436,6 +469,9 @@ int main() {
             in_front_vel = sqrt(sens_vel_x*sens_vel_x + sens_vel_y*sens_vel_y);
             in_front_dist = distance(car_x,car_y,sens_x,sens_y);
 
+            //vector<double> jmt_res;
+            //int remaining_trajectory;
+
             if (car_state == 2) // need lane change
             {
               double pred_speed_to_car = in_front_dist/(50*dist_inc)+(in_front_vel/100-car_speed/100);
@@ -552,6 +588,10 @@ int main() {
 
               if (can_change)
               {
+                // generate trajectory for d to start following
+                //jmt_res = JMT({car_d, 0.0, 0.0}, {targ_d, 0.0, 0.0}, 50);
+                //remaining_trajectory = 50;
+                //cout << "jmt: " << jmt_res[0] << endl;
                 car_state = 3;
               }
             }
@@ -565,6 +605,7 @@ int main() {
                 if (abs(car_d - targ_d)<0.1)
                 {
                   car_state = 1;
+                  //remaining_trajectory = 0;
                 }
               }
               else // default state, driving at max or follow speed
@@ -624,7 +665,7 @@ int main() {
 
               double delta_x = pos_x2-pos_x;
               double delta_y = pos_y2-pos_y;
-              speed = sqrt(delta_x*delta_x+delta_y*delta_y);
+              speed = distance(pos_x, pos_y, pos_x2, pos_y2) / 0.02;
 
               //pos_s = end_path_s;
               //pos_d = end_path_d;
@@ -659,10 +700,27 @@ int main() {
             //cout << "\t end d: " << end_path_d;
             //cout << "\t car d: " << car_d << endl;
 
-            cout << "Before 50 loop: Pos_s " << pos_s;
-            cout << "\t Pos_d " << pos_d;
-            cout << "\t Delta " << delta << endl;
+            //cout << "Before 50 loop: Pos_s " << pos_s;
+            //cout << "\t Pos_d " << pos_d;
+            //cout << "\t Delta " << delta << endl;
+            /*
+            double jmt0;
+            double jmt1;
+            double jmt2;
+            double jmt3;
+            double jmt4;
+            double jmt5;
 
+            if (remaining_trajectory>=1)
+            {
+              jmt_res[0] = jmt0;
+              jmt_res[1] = jmt1;
+              jmt_res[2] = jmt2;
+              jmt_res[3] = jmt3;
+              jmt_res[4] = jmt4;
+              jmt_res[5] = jmt5;
+            }
+            */
             for(int i = 0; i < 50-path_size; i++)
             {
               //next_x_vals.push_back(pos_x+(dist_inc)*cos(angle+(i+1)*(pi()/100)));
@@ -670,15 +728,16 @@ int main() {
               //pos_x += (dist_inc)*cos(angle+(i+1)*(pi()/100));
               //pos_y += (dist_inc)*sin(angle+(i+1)*(pi()/100));
               //pos_s += dist_inc;
-              cout << "I: " << i;
+              //cout << "I: " << i;
               double delta_prev_s = pos_s - prev_s;
               double delta_prev_d = pos_d - prev_d;
               prev_s = pos_s;
               prev_d = pos_d;
-              cout << "\t DS: " << delta_prev_s;
-              cout << "\t DP: " << delta_prev_d;
+              //cout << "\t DS: " << delta_prev_s;
+              //cout << "\t DP: " << delta_prev_d;
               pos_s += min(targ_dist_inc, (delta_prev_s*(1+0.005)+0.001));
               pos_s = fmod(pos_s, max_s);
+
 
               if (delta>0.0)
               {
@@ -689,8 +748,28 @@ int main() {
                 pos_d += max(delta, -0.05);
               }
 
-              cout << "\t Pos S: " << pos_s;
-              cout << "\t Pos D: " << pos_d << endl;
+              /*
+              if (remaining_trajectory<1)
+              {
+                if (delta>0.0)
+                {
+                  pos_d += min(delta, 0.05);
+                }
+                else
+                {
+                  pos_d += max(delta, -0.05);
+                }
+              }
+              else
+              {
+                double t = 50-remaining_trajectory;
+                pos_d = jmt0 + jmt1*t + jmt2*t*t + jmt3*t*t*t + jmt4*t*t*t*t + jmt5*t*t*t*t*t;
+                remaining_trajectory -= 1;
+                cout << "Coef pos_d: " << pos_d << endl;
+              }
+              */
+              //cout << "\t Pos S: " << pos_s;
+              //cout << "\t Pos D: " << pos_d << endl;
 
               path_point_x = waypoints_x(pos_s);
               path_point_y = waypoints_y(pos_s);
