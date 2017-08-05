@@ -56,7 +56,7 @@ int main() {
   string map_file_ = "../data/highway_map.csv";
   // The max s value before wrapping around the track back to 0
   double max_s = 6945.554;
-  double dist_inc = 0.42; // max speed
+  double dist_inc = 0.41; // max speed
   double targ_dist_inc;
   double targ_d;
   double pos_d;
@@ -112,8 +112,6 @@ int main() {
   tk::spline waypoints_dy;
   waypoints_dy.set_points(map_waypoints_s, map_waypoints_dy);
 
-
-
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy, &waypoints_x, &waypoints_y, &waypoints_dx, &waypoints_dy , &max_s, &car_state, &targ_dist_inc, &targ_d, &dist_inc, &pos_d, &pos_s, &prev_s, &prev_d](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -123,6 +121,9 @@ int main() {
     //cout << sdata << endl;
     double max_s_change = 0.001;
     double max_d_change = 0.001;
+    double min_dist_to_back_on_changelane = 10;
+    double dist_front_empty_on_changelane = 50;
+    double dist_front_speed_on_changelane = 30;
 
     if (length && length > 2 && data[0] == '4' && data[1] == '2') {
 
@@ -154,14 +155,10 @@ int main() {
           	// Sensor Fusion Data, a list of all other cars on the same side of the road.
           	auto sensor_fusion = j[1]["sensor_fusion"];
 
-            // get cars in front
+            // get closest car id's
             int num_cars = sensor_fusion.size();
-            //vector<double> cars_in_lane;
             double min_dist = 99999;
             double min_sens_i;
-            //vector<double> cars_in_left_lane;
-            //vector<double> cars_in_center_lane;
-            //vector<double> cars_in_right_lane;
 
             double min_dist_front_left = 99999;
             double min_dist_front_center = 99999;
@@ -268,7 +265,7 @@ int main() {
             //double sens_d = sens[6];
             double in_front_vel;// = sqrt(sens_vel_x*sens_vel_x + sens_vel_y*sens_vel_y);
             double in_front_dist;// = distance(car_x,car_y,sens_x,sens_y);
-
+            bool plan_lane_change = false;
             // calculating distance and velocity to car in front
             if (car_d <= 4)
             {
@@ -317,7 +314,6 @@ int main() {
               double pred_speed_to_car = in_front_dist/(50*dist_inc)+(in_front_vel/100-car_speed/100);
               targ_dist_inc = min(1.0, pred_speed_to_car)*dist_inc;
               bool can_change = false;
-              // TODO: Make decision when and where to change lanes
 
               double sens_x_l = sensor_fusion[min_sens_i_front_left][1];
               double sens_y_l = sensor_fusion[min_sens_i_front_left][2];
@@ -355,53 +351,192 @@ int main() {
               double sens_y_rr = sensor_fusion[min_sens_i_back_right][2];
               double in_back_dist_r = distance(car_x,car_y,sens_x_rr,sens_y_rr);
 
+              cout << "Need to change lane, targ_d: " << targ_d << endl;
+
               if (targ_d < 4.0) // in left lane
               {
-                //if (pred_speed_to_car_c > pred_speed_to_car_l)
-                if (((in_front_vel_c > in_front_vel_l) and (in_front_dist_c > 20)) or (in_front_dist_c > 40))
+                cout << "in_front_vel_c: " << in_front_vel_c << endl;
+                cout << "in_front_vel_l: " << in_front_vel_l << endl;
+                cout << "in_front_dist_c: " << in_front_dist_c << endl;
+                cout << "in_back_dist_c: " << in_back_dist_c << endl;
+                if ((in_front_dist_c > dist_front_empty_on_changelane) and
+                    (in_back_dist_c > min_dist_to_back_on_changelane))
                 {
-                  if (in_back_dist_c > 10)
+                  cout << "Changing on empty center" << endl;
+                  targ_d = 2+1*4.0;
+                  can_change = true;
+                }
+                else
+                {
+                  if ((in_front_dist_c > dist_front_speed_on_changelane) and
+                  (in_front_vel_c > in_front_vel_l) and
+                  (in_back_dist_c > min_dist_to_back_on_changelane))
                   {
+                    cout << "Changing on faster center" << endl;
                     targ_d = 2+1*4.0;
                     can_change = true;
                   }
                 }
+                /*
+                //if (pred_speed_to_car_c > pred_speed_to_car_l)
+                if (((in_front_vel_c > in_front_vel_l) and
+                                    (in_front_dist_c > dist_front_speed_on_changelane)) or
+                                    (in_front_dist_c > dist_front_empty_on_changelane))
+                {
+                  cout << "Considering change to CENTER: " << endl;
+                  if (in_back_dist_c > min_dist_to_back_on_changelane)
+                  {
+                    targ_d = 2+1*4.0;
+                    can_change = true;
+                    cout << "--> changing" << endl;
+                  }
+                }
+                */
               }
               else
               {
                 if (targ_d > 8.0)
                 {
-                  //if (pred_speed_to_car_c > pred_speed_to_car_r)
-                  if (((in_front_vel_c > in_front_vel_r) and (in_front_dist_c > 20)) or (in_front_dist_c > 40))
+                  cout << "in_front_vel_c: " << in_front_vel_c << endl;
+                  cout << "in_front_vel_r: " << in_front_vel_r << endl;
+                  cout << "in_front_dist_c: " << in_front_dist_c << endl;
+                  cout << "in_back_dist_c: " << in_back_dist_c << endl;
+                  if ((in_front_dist_c > dist_front_empty_on_changelane) and
+                      (in_back_dist_c > min_dist_to_back_on_changelane))
                   {
-                    if (in_back_dist_c > 10)
+                    cout << "Changing on empty center" << endl;
+                    targ_d = 2+1*4.0;
+                    can_change = true;
+                  }
+                  else
+                  {
+                    if ((in_front_dist_c > dist_front_speed_on_changelane) and
+                    (in_front_vel_c > in_front_vel_r) and
+                    (in_back_dist_c > min_dist_to_back_on_changelane))
                     {
+                      cout << "Changing on faster center" << endl;
                       targ_d = 2+1*4.0;
                       can_change = true;
                     }
                   }
+                  /*
+                  //if (pred_speed_to_car_c > pred_speed_to_car_r)
+                  if (((in_front_vel_c > in_front_vel_r) and
+                                    (in_front_dist_c > dist_front_speed_on_changelane)) or
+                                    (in_front_dist_c > dist_front_empty_on_changelane))
+                  {
+                    cout << "Considering change to CENTER: " << endl;
+                    if (in_back_dist_c > min_dist_to_back_on_changelane)
+                    {
+                      targ_d = 2+1*4.0;
+                      can_change = true;
+                      cout << "--> changing" << endl;
+                    }
+                  }
+                  */
                 }
                 else
                 {
-                  if (in_front_vel_l > in_front_vel_r)
+                  // car is in center lane and need decision where to change
+                  bool empty_left = false;
+                  bool empty_right = false;
+                  bool longest_empty_left = false;
+                  bool safe_change_left = false;
+                  bool safe_change_right = false;
+
+                  if (in_front_dist_l > dist_front_empty_on_changelane)
                   {
-                    if (((in_front_vel_l > in_front_vel_c) and (in_front_dist_l > 20)) or (in_front_dist_l > 40))
+                    empty_left = true;
+                    cout << "empty_left" << endl;
+                  }
+                  if (in_front_dist_r > dist_front_empty_on_changelane)
+                  {
+                    empty_right = true;
+                    cout << "empty_right" << endl;
+                  }
+                  if (in_front_dist_l > in_front_dist_r)
+                  {
+                    longest_empty_left = true;
+                    cout << "longest_empty_left" << endl;
+                  }
+                  if ((in_back_dist_l > min_dist_to_back_on_changelane) and
+                      (in_front_dist_l > dist_front_speed_on_changelane))
+                  {
+                    safe_change_left = true;
+                    cout << "safe_change_left" << endl;
+                  }
+                  if ((in_back_dist_r > min_dist_to_back_on_changelane) and
+                      (in_front_dist_r > dist_front_speed_on_changelane))
+                  {
+                    safe_change_right = true;
+                    cout << "safe_change_right" << endl;
+                  }
+                  // if both lanes are empty and safe to change then choose longest
+                  bool processed = false;
+                  if (empty_left and empty_right and safe_change_left and safe_change_right)
+                  {
+                    if (longest_empty_left)
                     {
-                      if (in_back_dist_l > 10)
+                      targ_d = 2+0*4.0;
+                      can_change = true;
+                      cout << "--> changing on left empty longest" << endl;
+                    }
+                    else
+                    {
+                      targ_d = 2+2*4.0;
+                      can_change = true;
+                      cout << "--> changing on right empty longest" << endl;
+                    }
+                    processed = true;
+                  }
+                  // changing left on empty
+                  if (!processed and empty_left and safe_change_left)
+                  {
+                    targ_d = 2+0*4.0;
+                    can_change = true;
+                    processed = true;
+                    cout << "--> changing on left empty" << endl;
+                  }
+                  // changing right on empty
+                  if (!processed and empty_right and safe_change_right)
+                  {
+                    targ_d = 2+2*4.0;
+                    can_change = true;
+                    processed = true;
+                    cout << "--> changing on right empty" << endl;
+                  }
+
+                  // case when not empty lane
+                  if (!processed)
+                  {
+                    if (in_front_vel_l > in_front_vel_r)
+                    {
+                      if (((in_front_vel_l > in_front_vel_c) and
+                                      (in_front_dist_l > dist_front_speed_on_changelane)) or
+                                      (in_front_dist_l > dist_front_empty_on_changelane))
                       {
-                        targ_d = 2+0*4.0;
-                        can_change = true;
+                        cout << "Considering change to LEFT: " << endl;
+                        if (in_back_dist_l > min_dist_to_back_on_changelane)
+                        {
+                          targ_d = 2+0*4.0;
+                          can_change = true;
+                          cout << "--> changing" << endl;
+                        }
                       }
                     }
-                  }
-                  else
-                  {
-                    if (((in_front_vel_r > in_front_vel_c) and (in_front_dist_r > 20)) or (in_front_dist_r > 40))
+                    else
                     {
-                      if (in_back_dist_r > 10)
+                      if (((in_front_vel_r > in_front_vel_c) and
+                                        (in_front_dist_r > dist_front_speed_on_changelane)) or
+                                        (in_front_dist_r > dist_front_empty_on_changelane))
                       {
-                        targ_d = 2+2*4.0;
-                        can_change = true;
+                        cout << "Considering change to RIGHT: " << endl;
+                        if (in_back_dist_r > min_dist_to_back_on_changelane)
+                        {
+                          targ_d = 2+2*4.0;
+                          can_change = true;
+                          cout << "--> changing" << endl;
+                        }
                       }
                     }
                   }
@@ -432,6 +567,7 @@ int main() {
                 //jmt_res = JMT({car_d, 0.0, 0.0}, {targ_d, 0.0, 0.0}, 50);
                 //remaining_trajectory = 50;
                 //cout << "jmt: " << jmt_res[0] << endl;
+                plan_lane_change = true;
                 car_state = 3;
               }
             }
@@ -550,7 +686,6 @@ int main() {
             double jmt3;
             double jmt4;
             double jmt5;
-
             if (remaining_trajectory>=1)
             {
               jmt_res[0] = jmt0;
@@ -561,36 +696,82 @@ int main() {
               jmt_res[5] = jmt5;
             }
             */
-            for(int i = 0; i < 50-path_size; i++)
+
+            // Create path for lane change
+            if (plan_lane_change)
             {
-              //next_x_vals.push_back(pos_x+(dist_inc)*cos(angle+(i+1)*(pi()/100)));
-              //next_y_vals.push_back(pos_y+(dist_inc)*sin(angle+(i+1)*(pi()/100)));
-              //pos_x += (dist_inc)*cos(angle+(i+1)*(pi()/100));
-              //pos_y += (dist_inc)*sin(angle+(i+1)*(pi()/100));
-              //pos_s += dist_inc;
-              //cout << "I: " << i;
-              double delta_prev_s = pos_s - prev_s;
-              double delta_prev_d = pos_d - prev_d;
-              prev_s = pos_s;
-              prev_d = pos_d;
-              //cout << "\t DS: " << delta_prev_s;
-              //cout << "\t DP: " << delta_prev_d;
-              pos_s += min(targ_dist_inc, (delta_prev_s*(1+0.005)+0.001));
-              pos_s = fmod(pos_s, max_s);
+              // take last position and last position -10
+              // take target position and target position +10
+              // create spline
+              vector<double> line_change_s;
+              vector<double> line_change_d;
+              line_change_s.push_back(pos_s-4);
+              line_change_d.push_back(prev_d);
+              line_change_s.push_back(pos_s-3);
+              line_change_d.push_back(prev_d);
+              line_change_s.push_back(pos_s-2);
+              line_change_d.push_back(prev_d);
+              line_change_s.push_back(pos_s-1);
+              line_change_d.push_back(prev_d);
+              line_change_s.push_back(pos_s);
+              line_change_d.push_back(prev_d);
+
+              line_change_s.push_back(pos_s+50);
+              line_change_d.push_back(targ_d);
+              line_change_s.push_back(pos_s+54);
+              line_change_d.push_back(targ_d);
+
+              tk::spline path_d;
+              path_d.set_points(line_change_s, line_change_d);
 
 
-              if (delta>0.0)
+              for(int i = 0; i < 50; i++)
               {
-                pos_d += min(delta, 0.05);
+                double delta_prev_s = pos_s - prev_s;
+                //double delta_prev_d = pos_d - prev_d;
+                prev_s = pos_s;
+                //prev_d = pos_d;
+                pos_s += min(targ_dist_inc, (delta_prev_s*(1+0.005)+0.001));
+                pos_s = fmod(pos_s, max_s);
+                pos_d = path_d(pos_s);
+                path_point_x = waypoints_x(pos_s);
+                path_point_y = waypoints_y(pos_s);
+                path_point_dx = waypoints_dx(pos_s);
+                path_point_dy =  waypoints_dy(pos_s);
+                //double lane_d = pp.d;
+
+                pos_x = path_point_x + path_point_dx * pos_d;
+                pos_y = path_point_y + path_point_dy * pos_d;
+
+                next_x_vals.push_back(pos_x);
+                next_y_vals.push_back(pos_y);
               }
-              else
-              {
-                pos_d += max(delta, -0.05);
-              }
+              plan_lane_change = false;
+            }
 
-              /*
-              if (remaining_trajectory<1)
+
+
+            // rewrite for loop for lane change
+            if (path_size<50)
+            {
+              for(int i = 0; i < 50-path_size; i++)
               {
+                //next_x_vals.push_back(pos_x+(dist_inc)*cos(angle+(i+1)*(pi()/100)));
+                //next_y_vals.push_back(pos_y+(dist_inc)*sin(angle+(i+1)*(pi()/100)));
+                //pos_x += (dist_inc)*cos(angle+(i+1)*(pi()/100));
+                //pos_y += (dist_inc)*sin(angle+(i+1)*(pi()/100));
+                //pos_s += dist_inc;
+                //cout << "I: " << i;
+                double delta_prev_s = pos_s - prev_s;
+                double delta_prev_d = pos_d - prev_d;
+                prev_s = pos_s;
+                prev_d = pos_d;
+                //cout << "\t DS: " << delta_prev_s;
+                //cout << "\t DP: " << delta_prev_d;
+                pos_s += min(targ_dist_inc, (delta_prev_s*(1+0.005)+0.001));
+                pos_s = fmod(pos_s, max_s);
+
+
                 if (delta>0.0)
                 {
                   pos_d += min(delta, 0.05);
@@ -599,30 +780,43 @@ int main() {
                 {
                   pos_d += max(delta, -0.05);
                 }
-              }
-              else
-              {
-                double t = 50-remaining_trajectory;
-                pos_d = jmt0 + jmt1*t + jmt2*t*t + jmt3*t*t*t + jmt4*t*t*t*t + jmt5*t*t*t*t*t;
-                remaining_trajectory -= 1;
-                cout << "Coef pos_d: " << pos_d << endl;
-              }
-              */
-              //cout << "\t Pos S: " << pos_s;
-              //cout << "\t Pos D: " << pos_d << endl;
 
-              path_point_x = waypoints_x(pos_s);
-              path_point_y = waypoints_y(pos_s);
-              path_point_dx = waypoints_dx(pos_s);
-              path_point_dy =  waypoints_dy(pos_s);
-              //double lane_d = pp.d;
+                /*
+                if (remaining_trajectory<1)
+                {
+                  if (delta>0.0)
+                  {
+                    pos_d += min(delta, 0.05);
+                  }
+                  else
+                  {
+                    pos_d += max(delta, -0.05);
+                  }
+                }
+                else
+                {
+                  double t = 50-remaining_trajectory;
+                  pos_d = jmt0 + jmt1*t + jmt2*t*t + jmt3*t*t*t + jmt4*t*t*t*t + jmt5*t*t*t*t*t;
+                  remaining_trajectory -= 1;
+                  cout << "Coef pos_d: " << pos_d << endl;
+                }
+                */
+                //cout << "\t Pos S: " << pos_s;
+                //cout << "\t Pos D: " << pos_d << endl;
 
-              pos_x = path_point_x + path_point_dx * pos_d;
-              pos_y = path_point_y + path_point_dy * pos_d;
+                path_point_x = waypoints_x(pos_s);
+                path_point_y = waypoints_y(pos_s);
+                path_point_dx = waypoints_dx(pos_s);
+                path_point_dy =  waypoints_dy(pos_s);
+                //double lane_d = pp.d;
 
-              next_x_vals.push_back(pos_x);
-              next_y_vals.push_back(pos_y);
-            }
+                pos_x = path_point_x + path_point_dx * pos_d;
+                pos_y = path_point_y + path_point_dy * pos_d;
+
+                next_x_vals.push_back(pos_x);
+                next_y_vals.push_back(pos_y);
+              } // end for loop
+            } // end if (path_size<50)
 
           	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
           	msgJson["next_x"] = next_x_vals;
