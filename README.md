@@ -1,6 +1,55 @@
 # CarND-Path-Planning-Project
 Self-Driving Car Engineer Nanodegree Program
-   
+
+## Reflection
+This was fun and one of the most interesting projects, because it required to have a lot of thought and consideration to tie up all different aspects and to receive satisfactory results.
+
+### Path generation
+There are several topics that contribute to final goal of path generation.
+
+#### Nominal road trajectory from waypoints
+With the waypoints given, first task was to create smooth trajectory. With the class instructions given, it was smooth and simple process of applying spline function to the provided data.
+Initially there was issues at the end of the loop, with the difference between the trajectory  end and start. It was resolved by adding 2 first waypoints at the end of the dataset. After providing those additional inputs spline generated smooth path.
+
+#### Trajectory planning in Frenet coordinates
+I am doing all trajectory planning in the Frenet coordinates. Only at the last step Frenet coordinates are translated to the X, Y coordinates by taking trajectory coordinates for Frenet S position and adding trajectory normal multiplied by Frenet D position.
+
+#### Speed control
+If the road ahead is empty then car tries to drive at  preset maximum speed.
+However, if there is vehicle in front, it starts to slow down proportionally to the distance in front and target vehicles speed.
+This is done by calculating distance to car and adding difference between front car and self driving car distance that they will drive with current speed.
+
+If self driving car will not be able to drive at full speed it will start calculating possible lane changes.
+
+#### Lane change from left or right lane
+When car is driving in left or right lane, when it becomes obstructed it will start checking is it necessary and is it safe to change to the center lane.
+If the center lane is empty (within predefined distance) and it is safe to change (there is no car besides or close behind) then it will initiate change to center lane.
+If the car in current lane is traveling faster than car in center lane, the self driving car will remain in current lane.
+If there is car close by in center lane and is traveling faster than car in front, it will initiate lane change if it is safe distance from front and back.
+
+#### Lane change from center lane
+When car is traveling in center lane, then it will analyze both left and right lane as potential trajectory change candidate.
+If both lanes are empty then it will change to lane with furthest free road.
+If there is empty lane then it will change to that lane.
+If there are cars in near distance then it will check velocities of the cars in front in each lane to decide if it is necessary to change and to which line to change.
+
+Of course car will change lanes only if there is no car close behind in target lane.
+
+#### Lane change trajectory
+For lane change, the Frenet D component is calculated using spline by taking in account last points from existing path and target lane predefined distance ahead.
+This created smooth transition path in D coordinate.
+
+After the D coordinate is calculated, it is applied the same way as for straight driving.
+
+## Possible enhancements
+### Double lane change
+If car is driving in left or right most lane, it could stuck in lane if the center lane is occupied and driving besides in similar speed. In more advanced scenario, car could slow down to change to middle lane and then change to free lane.
+
+### Code quality
+This was one of the most interesting and challenging projects, not only due to new functionality that should be implemented, but also due to amount of code that should be written and organized.
+My takeaway is that I need to advance skills in writing good readable code in C++.
+
+
 ### Simulator. You can download the Term3 Simulator BETA which contains the Path Planning Project from the [releases tab](https://github.com/udacity/self-driving-car-sim/releases).
 
 In this project your goal is to safely navigate around a virtual highway with other traffic that is driving +-10 MPH of the 50 MPH speed limit. You will be provided the car's localization and sensor fusion data, there is also a sparse map list of waypoints around the highway. The car should try to go as close as possible to the 50 MPH speed limit, which means passing slower traffic when possible, note that other cars will try to change lanes too. The car should avoid hitting other cars at all cost as well as driving inside of the marked road lanes at all times, unless going from one lane to another. The car should be able to make one complete loop around the 6946m highway. Since the car is trying to go 50 MPH, it should take a little over 5 minutes to complete 1 loop. Also the car should not experience total acceleration over 10 m/s^2 and jerk that is greater than 50 m/s^3.
@@ -36,13 +85,13 @@ Here is the data provided from the Simulator to the C++ Program
 #### Previous path data given to the Planner
 
 //Note: Return the previous list but with processed points removed, can be a nice tool to show how far along
-the path has processed since last time. 
+the path has processed since last time.
 
 ["previous_path_x"] The previous list of x points previously given to the simulator
 
 ["previous_path_y"] The previous list of y points previously given to the simulator
 
-#### Previous path's end s and d values 
+#### Previous path's end s and d values
 
 ["end_path_s"] The previous list's last point's frenet s value
 
@@ -50,7 +99,7 @@ the path has processed since last time.
 
 #### Sensor Fusion Data, a list of all other car's attributes on the same side of the road. (No Noise)
 
-["sensor_fusion"] A 2d vector of cars and then that car's [car's unique ID, car's x position in map coordinates, car's y position in map coordinates, car's x velocity in m/s, car's y velocity in m/s, car's s position in frenet coordinates, car's d position in frenet coordinates. 
+["sensor_fusion"] A 2d vector of cars and then that car's [car's unique ID, car's x position in map coordinates, car's y position in map coordinates, car's x velocity in m/s, car's y velocity in m/s, car's s position in frenet coordinates, car's d position in frenet coordinates.
 
 ## Details
 
@@ -80,7 +129,7 @@ A really helpful resource for doing this project and creating smooth trajectorie
   * Run either `install-mac.sh` or `install-ubuntu.sh`.
   * If you install from source, checkout to commit `e94b6e1`, i.e.
     ```
-    git clone https://github.com/uWebSockets/uWebSockets 
+    git clone https://github.com/uWebSockets/uWebSockets
     cd uWebSockets
     git checkout e94b6e1
     ```
